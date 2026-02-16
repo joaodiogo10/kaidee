@@ -1,0 +1,30 @@
+{
+  "1": {
+    "reactivity": 0.86,
+    "perception": 0.2,
+    "movement": 0.12,
+    "color": 0.86,
+    "brightness": 0.71,
+    "blend": 0.7,
+    "img_blend": 0.71,
+    "code": 0.5,
+    "zoom": 0.0,
+    "pan_x": 0.5,
+    "pan_y": 0.5,
+    "mode": "kaleidoscope"
+  },
+  "9": {
+    "reactivity": 0.43,
+    "perception": 0.51,
+    "movement": 0.03,
+    "color": 0.72,
+    "brightness": 0.42,
+    "blend": 0.61,
+    "img_blend": 0.26,
+    "code": 0.5,
+    "zoom": 0.1,
+    "pan_x": 0.43,
+    "pan_y": 0.53,
+    "mode": "kaleidoscope"
+  }
+}

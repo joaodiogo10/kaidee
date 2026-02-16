@@ -1,0 +1,23 @@
+[project]
+name = "kaidee"
+version = "0.1.0"
+description = "Audio-reactive visual engine for live DJ sets"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "Pillow",
+    "pygame",
+]
+
+[project.optional-dependencies]
+live = ["sounddevice", "moderngl"]
+midi = ["mido", "python-rtmidi"]
+all = ["src[live,midi]"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[project.scripts]
+kaidee-compile = "src.compile:main"
+kaidee-live = "src.live:main"

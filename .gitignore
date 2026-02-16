@@ -1,0 +1,10 @@
+compiled/
+output/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+*.WAV
+.DS_Store
+.claude/
+.pytest_cache/
