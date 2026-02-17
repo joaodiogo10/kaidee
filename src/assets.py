@@ -1,12 +1,22 @@
-"""Load pre-compiled visual assets into RAM."""
+"""Load pre-compiled visual assets into RAM with lazy variant derivation."""
 
 import json
 import os
+import re
 import sys
 
 import numpy as np
 
 from src.transforms import solarize, color_rotate, posterize
+
+
+# Regex to detect derivable variant keys and extract (prefix, operation, param)
+_DERIVE_RE = re.compile(
+    r'^(.+?)_(inverted|solar_(\d+)|crot_(\d+)|poster_(\d+))$'
+)
+
+# Max cached (derived + downscaled) frames in the LRU
+_CACHE_MAX = 40
 
 
 class Assets:
@@ -30,72 +40,117 @@ class Assets:
         self.resolution: tuple[int, int] = tuple(self.meta["resolution"])
 
         print(f"Loading {len(self.meta['frame_keys'])} compiled frames...")
-        self.frames: dict[str, np.ndarray] = {}
+        self._base_frames: dict[str, np.ndarray] = {}
         for key in self.meta["frame_keys"]:
             path = os.path.join(directory, f"{key}.npz")
             if os.path.exists(path):
-                self.frames[key] = np.load(path)['data']
+                self._base_frames[key] = np.load(path)['data']
             else:
-                # Fallback for old .npy format
                 npy_path = os.path.join(directory, f"{key}.npy")
                 if os.path.exists(npy_path):
-                    self.frames[key] = np.load(npy_path)
+                    self._base_frames[key] = np.load(npy_path)
 
         vig_path = os.path.join(directory, "vignette.npz")
         if os.path.exists(vig_path):
-            self.vignette: np.ndarray | None = np.load(vig_path)['data']
+            self._full_vignette: np.ndarray | None = np.load(vig_path)['data']
         else:
-            # Fallback for old .npy format
             npy_vig = os.path.join(directory, "vignette.npy")
-            self.vignette = np.load(npy_vig) if os.path.exists(npy_vig) else None
+            self._full_vignette = np.load(npy_vig) if os.path.exists(npy_vig) else None
+        self.vignette = self._full_vignette
 
-        # Derive cheap variants from abstract bases
-        print("  Deriving color/effect variants...")
-        self._derive_variants()
+        # Scale state (set by rescale())
+        self._scale_y_idx: np.ndarray | None = None
+        self._scale_x_idx: np.ndarray | None = None
 
-        # Cache for downscaled frames
-        self._full_frames: dict[str, np.ndarray] | None = None
-        self._full_vignette: np.ndarray | None = None
+        # LRU cache for derived + downscaled frames
+        self._cache: dict[str, np.ndarray] = {}
+        self._cache_order: list[str] = []
 
-        print(f"  {len(self.frames)} frames ready")
+        # Count derivable variants for reporting
+        n_abstract = sum(1 for k in self._base_frames if k.endswith('_abstract'))
+        n_derivable = n_abstract * 12  # inverted + 3 solar + 5 crot + 3 poster
+        print(f"  {len(self._base_frames)} base frames loaded "
+              f"({n_derivable} variants derived on demand)")
 
-    def _derive_variants(self) -> None:
-        """Generate cheap variants (solarize, color_rotate, posterize, invert)
-        from abstract bases. These are fast enough to compute at load time
-        rather than storing on disk."""
-        base_keys = [k for k in self.frames if k.endswith('_abstract')]
-        for base_key in base_keys:
-            prefix = base_key[:-len('_abstract')]
-            abstract = self.frames[base_key]
-            self.frames[f"{prefix}_inverted"] = (255 - abstract).astype(np.uint8)
-            for thresh in (80, 140, 200):
-                self.frames[f"{prefix}_solar_{thresh}"] = solarize(abstract, thresh)
-            for angle in (60, 120, 180, 240, 300):
-                self.frames[f"{prefix}_crot_{angle}"] = color_rotate(abstract, angle)
-            for levels in (2, 3, 4):
-                self.frames[f"{prefix}_poster_{levels}"] = posterize(abstract, levels)
+    def _try_derive(self, key: str) -> np.ndarray | None:
+        """Attempt to compute a derived variant from an abstract base."""
+        m = _DERIVE_RE.match(key)
+        if not m:
+            return None
+        prefix = m.group(1)
+        abstract_key = f"{prefix}_abstract"
+        abstract = self._base_frames.get(abstract_key)
+        if abstract is None:
+            return None
+
+        variant = m.group(2)
+        if variant == "inverted":
+            return (255 - abstract).astype(np.uint8)
+        elif variant.startswith("solar_"):
+            return solarize(abstract, int(m.group(3)))
+        elif variant.startswith("crot_"):
+            return color_rotate(abstract, int(m.group(4)))
+        elif variant.startswith("poster_"):
+            return posterize(abstract, int(m.group(5)))
+        return None
+
+    def _downscale(self, frame: np.ndarray) -> np.ndarray:
+        """Downscale frame using precomputed indices (nearest neighbor)."""
+        if self._scale_y_idx is not None:
+            return frame[self._scale_y_idx][:, self._scale_x_idx]
+        return frame
+
+    def _cache_put(self, key: str, frame: np.ndarray) -> None:
+        """Add frame to LRU cache, evicting oldest if full."""
+        if key in self._cache:
+            self._cache_order.remove(key)
+        self._cache[key] = frame
+        self._cache_order.append(key)
+        while len(self._cache) > _CACHE_MAX:
+            evict = self._cache_order.pop(0)
+            self._cache.pop(evict, None)
 
     def get(self, key: str) -> np.ndarray | None:
-        return self.frames.get(key)
+        # Fast path: LRU cache hit
+        cached = self._cache.get(key)
+        if cached is not None:
+            # Move to end of LRU
+            self._cache_order.remove(key)
+            self._cache_order.append(key)
+            return cached
+
+        # Try base frames first
+        frame = self._base_frames.get(key)
+        if frame is None:
+            # Try lazy derivation
+            frame = self._try_derive(key)
+        if frame is None:
+            return None
+
+        # Downscale if render scale < 1.0
+        result = self._downscale(frame)
+        self._cache_put(key, result)
+        return result
 
     def rescale(self, full_w: int, full_h: int, scale: float) -> None:
-        """Downscale or restore all asset frames to a target resolution."""
+        """Set render scale. Clears the cache; get() downscales on demand."""
         w = int(full_w * scale)
         h = int(full_h * scale)
 
-        if self._full_frames is None:
-            self._full_frames = dict(self.frames)
-            if self.vignette is not None:
-                self._full_vignette = self.vignette.copy()
-
         if scale < 1.0:
-            y_idx = np.linspace(0, full_h - 1, h).astype(int)
-            x_idx = np.linspace(0, full_w - 1, w).astype(int)
-            for key, full in self._full_frames.items():
-                self.frames[key] = full[y_idx][:, x_idx]
-            if self.vignette is not None and self._full_vignette is not None:
-                self.vignette = self._full_vignette[y_idx][:, x_idx]
+            self._scale_y_idx = np.linspace(0, full_h - 1, h).astype(int)
+            self._scale_x_idx = np.linspace(0, full_w - 1, w).astype(int)
         else:
-            self.frames = dict(self._full_frames)
-            if self._full_vignette is not None:
+            self._scale_y_idx = None
+            self._scale_x_idx = None
+
+        # Downscale vignette
+        if self._full_vignette is not None:
+            if scale < 1.0:
+                self.vignette = self._full_vignette[self._scale_y_idx][:, self._scale_x_idx]
+            else:
                 self.vignette = self._full_vignette
+
+        # Invalidate cache — scale changed
+        self._cache.clear()
+        self._cache_order.clear()
