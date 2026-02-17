@@ -11,9 +11,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-live = ["sounddevice", "moderngl"]
+live = ["sounddevice", "moderngl", "librosa"]
 midi = ["mido", "python-rtmidi"]
-all = ["src[live,midi]"]
+all = ["kaidee[live,midi]"]
 
 [tool.setuptools.packages.find]
 include = ["src*"]
