@@ -55,7 +55,7 @@ _DROP_FLAVORS = [
 
 def compute_postfx(
     t: float,
-    fps: float,
+    dt: float,
     dp: DerivedParams,
     drift: DriftValues,
     bass: float,
@@ -74,6 +74,7 @@ def compute_postfx(
     buildup = max(0, drift.energy_delta)
     drop = drift.drop_impact
     speed_mult = 0.5 + ds * 6.0
+    bp = drift.beat_pulse
     fx = PostFX()
 
     # Pick a drop flavor based on bar index (varies per section)
@@ -82,22 +83,28 @@ def compute_postfx(
 
     # ---- Pan (GPU-normalized fractions) ----
     pan_pct = 0.002 + ds * 0.05
+    # Beat-synced nudge: push outward on beat, relax between beats
+    beat_nudge = bp * bass * pan_pct * 0.6
     fx.pan_x = (np.sin(t * 0.23 * speed_mult) * pan_pct
                 + np.sin(t * 0.11 * speed_mult) * pan_pct * 0.5
+                + np.sin(drift.beat_phase * np.pi * 2) * beat_nudge
                 + (params.pan_x - 0.5) * 0.5)
     fx.pan_y = (np.cos(t * 0.17 * speed_mult) * pan_pct * 0.7
                 + np.cos(t * 0.09 * speed_mult) * pan_pct * 0.3
+                + np.cos(drift.beat_phase * np.pi * 2) * beat_nudge * 0.5
                 + (params.pan_y - 0.5) * 0.5)
 
     # ---- Zoom ----
     breath_amp = 0.002 + ds * 0.01
     fx.zoom = 1.0 + breath_amp * max(0.0, np.sin(t * (0.4 + ds * 1.5)))
+    # Beat-synced zoom punch (scales with bass intensity)
+    fx.zoom += bp * bass * 0.02 * (1.0 + ds * 2.0)
     fx.zoom += drop * d_zoom
     fx.zoom *= 0.5 + params.zoom * 1.5  # manual zoom
 
     # ---- Rotation ----
     rot_speed_dps = ds * 50
-    new_rot_angle = global_rot_angle + rot_speed_dps / max(fps, 1)
+    new_rot_angle = global_rot_angle + rot_speed_dps * dt
     fx.rot_angle_deg = new_rot_angle
     fx.rot_wobble_rad = float(np.radians(
         new_rot_angle + np.sin(t * 0.5 * speed_mult) * ds * 10))

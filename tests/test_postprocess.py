@@ -8,7 +8,7 @@ from src.drift import DriftValues
 def _default_args(**overrides):
     """Build default arguments for compute_postfx."""
     args = dict(
-        t=1.0, fps=60.0, dp=derive(Params()), drift=DriftValues(),
+        t=1.0, dt=1.0/60.0, dp=derive(Params()), drift=DriftValues(),
         bass=0.5, energy=0.4, params=Params(), global_rot_angle=0.0,
     )
     args.update(overrides)

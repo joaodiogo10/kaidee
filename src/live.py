@@ -80,6 +80,7 @@ class LiveRenderer:
 
         # GPU rotation state
         self._global_rot_angle = 0.0
+        self._last_uniform_time = 0.0
 
         # HUD dirty-flag caching
         self._hud_dirty = True
@@ -472,8 +473,11 @@ class LiveRenderer:
 
     def _compute_gpu_uniforms(self, t):
         bass, mids, highs, energy, onset = self._get_audio()
+        now = time.time()
+        dt = min(now - self._last_uniform_time, 0.1) if self._last_uniform_time > 0 else 1.0 / self.fps
+        self._last_uniform_time = now
         fx, self._global_rot_angle = compute_postfx(
-            t, self.fps, self.dp, self._current_drift, bass, energy,
+            t, dt, self.dp, self._current_drift, bass, energy,
             self.params, self._global_rot_angle)
 
         # GPU trail state tracking
