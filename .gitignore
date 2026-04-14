@@ -1,10 +1,17 @@
-compiled/
-output/
-__pycache__/
-*.pyc
+# v1
+v1/compiled/
+v1/recordings/
+v1/*.WAV
+v1/__pycache__/
+v1/**/__pycache__/
+v1/*.egg-info/
+v1/.pytest_cache/
+
+# v2
+target/
+
+# shared
 .venv/
-*.egg-info/
-*.WAV
+*.pyc
 .DS_Store
 .claude/
-.pytest_cache/
