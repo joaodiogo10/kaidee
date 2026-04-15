@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "crates/kaidee-analysis",
+    "crates/kaidee-app",
+]
+resolver = "2"

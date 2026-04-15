@@ -1,0 +1,13 @@
+[package]
+name = "kaidee-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kaidee"
+path = "src/main.rs"
+
+[dependencies]
+kaidee-analysis = { path = "../kaidee-analysis" }
+crossterm = "0.28"
+clap = { version = "4", features = ["derive"] }

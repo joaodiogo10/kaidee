@@ -1,0 +1,9 @@
+[package]
+name = "kaidee-analysis"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cpal = "0.15"
+ringbuf = "0.4"
+rustfft = "6"

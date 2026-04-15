@@ -8,7 +8,7 @@ v1/*.egg-info/
 v1/.pytest_cache/
 
 # v2
-target/
+v2/target/
 
 # shared
 .venv/

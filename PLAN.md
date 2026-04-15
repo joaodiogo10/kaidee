@@ -38,12 +38,38 @@ v1 proved the concept works. The problems that warrant a full rewrite:
 ```
 kaidee/
 ├── crates/
-│   ├── kaidee-analysis/    # Audio analysis engine — no rendering dependency
-│   ├── kaidee-renderer/    # GPU visual engine — consumes AudioFrame
-│   └── kaidee-app/         # Entry point, wires everything together
+│   ├── kaidee-analysis/    # lib — pure audio analysis, zero UI/rendering code
+│   ├── kaidee-renderer/    # lib — GPU visual engine, zero audio code (Phase 2)
+│   └── kaidee-app/         # bin — composition root, owns the event loop
 ├── v1/                     # Original Python implementation (archived)
 └── PLAN.md
 ```
+
+**Dependency rule:** `kaidee-analysis` and `kaidee-renderer` never depend on each other.
+Only `kaidee-app` depends on both.
+
+### Visualizer Trait
+
+The UI/display layer is abstracted behind a trait in `kaidee-app`. This is what makes
+the terminal → GPU swap possible without touching any analysis code:
+
+```rust
+// kaidee-app
+pub trait Visualizer {
+    fn update(&mut self, frame: &AudioFrame);
+    fn render(&mut self);
+}
+
+// Phase 1 — terminal bars
+struct TerminalUi { ... }
+impl Visualizer for TerminalUi { ... }
+
+// Phase 2 — GPU renderer
+struct GpuRenderer { ... }
+impl Visualizer for GpuRenderer { ... }
+```
+
+`kaidee-app` holds a `Box<dyn Visualizer>` and never knows which one it is.
 
 ### Data Flow
 
@@ -54,7 +80,7 @@ cpal audio callback (low-latency thread)
   RingBuffer<f32>  ←── lock-free, never blocks callback
         │
         ▼
-  Analysis thread  (dedicated OS thread)
+  Analysis thread  (dedicated OS thread, lives in kaidee-analysis)
         │
         ├── FFT pipeline
         ├── Band energies
@@ -73,14 +99,13 @@ cpal audio callback (low-latency thread)
      DROP | BUILD | BREAKDOWN | PHRASE_START | KEY_CHANGE
         │
         ▼
-  Render thread  (wgpu, 60Hz)
+  kaidee-app: Box<dyn Visualizer>::update(frame)
         │
-        ├── Mode system (Rust traits)
-        ├── Image compositing (GPU)
-        └── Post-FX shader
+        ├── Phase 1: TerminalUi  (prints band bars to stdout)
+        └── Phase 2: GpuRenderer (wgpu, 60Hz, modes, post-FX)
 ```
 
-The `AudioFrame` is the public API boundary between analysis and rendering. The renderer never touches raw audio or FFT output.
+The `AudioFrame` is the public API boundary. The visualizer never touches raw audio or FFT output.
 
 ---
 
