@@ -1,4 +1,5 @@
+pub mod analysis;
 pub mod engine;
 pub mod frame;
+pub mod global;
 pub mod stats;
-mod analysis; // private — implementation detail of the engine

@@ -10,6 +10,10 @@ v1/.pytest_cache/
 # v2
 v2/target/
 
+# Audio fixtures — too large for git; .reference.json files are tracked
+*.wav
+*.mp3
+
 # shared
 .venv/
 *.pyc

@@ -4,3 +4,13 @@ members = [
     "crates/kaidee-app",
 ]
 resolver = "2"
+
+# Optimize third-party dependencies and the analysis crate even in dev
+# builds. FFT and per-sample DSP loops dominate fixture-test runtime;
+# leaving them at opt-level=0 makes tests ~50× slower. kaidee-app stays
+# unoptimized for fast incremental rebuilds during UI work.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.kaidee-analysis]
+opt-level = 3

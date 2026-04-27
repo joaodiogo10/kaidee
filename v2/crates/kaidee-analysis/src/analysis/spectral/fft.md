@@ -1,4 +1,4 @@
-# Spectral Analysis
+# FftAnalyzer — Short-Time FFT with Hann Window
 
 Converts a window of audio samples into a **magnitude spectrum** and a set of
 **frequency-band energies** via a short-time FFT (fast Fourier transform).
@@ -20,6 +20,15 @@ sample window (2048 samples)
 band energies (6 bands)                                    magnitudes slice
   → AudioFrame fields                                 → dynamics, beat tracker
 ```
+
+## Trade-offs
+
+| Property              | Value                                              |
+|-----------------------|----------------------------------------------------|
+| Frequency resolution  | ~21.5 Hz/bin at 44 100 Hz (coarse in bass range)  |
+| Window latency        | ~46 ms (FFT_SIZE = 2048 samples at 44 100 Hz)     |
+| CPU cost              | O(N log N) per frame — cheap at 100 Hz rate       |
+| Spectral leakage      | Reduced by Hann window; non-integer bins still spill |
 
 ## Hann Window
 
@@ -76,6 +85,36 @@ same scale.
 | `mid`      | 500 – 2 000 Hz| 71                | Core melody, snare body      |
 | `presence` | 2 – 6 kHz     | 186               | Vocals, attack transients    |
 | `air`      | 6 kHz – Nyq.  | 744               | Cymbals, brightness, hiss    |
+
+## Onset Strength
+
+Each frame, `FftAnalyzer` computes one `onset_strength: f32` scalar via
+**half-wave rectified log-magnitude spectral flux**:
+
+```
+flux[i] = max(0,  log(1 + C·mag_new[i])
+             −    log(1 + C·mag_old[i]))
+```
+
+Two design choices:
+
+- **Log compression** (`C = 1000`) — maps magnitudes onto a perceptual scale.
+  Without it, the flux is dominated by absolute loudness rather than relative
+  energy arrivals; quiet passages produce near-zero onset even on a sharp attack.
+- **Bass weighting (3×)** for bins below 250 Hz — kick-drum transients are the
+  dominant beat signal in electronic music. Equal-weight flux dilutes the kick
+  with hi-hats, reverb tails, and noise.
+
+The per-bin contributions are summed, divided by the number of bins, scaled by
+`2`, and clamped to `[0, 1]`:
+
+```
+onset_strength = clamp(sum(flux) / n_bins × 2, 0, 1)
+```
+
+The beat tracker consumes this scalar; it has no knowledge of bins or
+magnitudes. See [`beat/beat.md`](../beat/beat.md) for how the scalar feeds the
+comb filter and PLL.
 
 ## Level Mapping (linear → 0–1)
 
